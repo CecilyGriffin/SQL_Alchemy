@@ -11,12 +11,12 @@ from flask import Flask, jsonify
 #################################################
 engine = create_engine("sqlite:///hawaii.sqlite")
 # reflect an existing database into a new model
-base = automap_base()
+Base = automap_base()
 # reflect the tables
-base.prepare(engine, reflect=True)
+Base.prepare(engine, reflect=True)
 # Save reference to the table
-measurement = base.classes.measurement
-station = base.classes.station
+Measurement = Base.classes.Measurement
+Station = Base.classes.Station
 # Create our session (link) from Python to the DB
 session = session(engine)
 
@@ -33,9 +33,9 @@ def welcome():
     return (
         "Welcome to the Climate API!<br/>"
         "Available Routes:<br/>"
-       "/api/v1.0/precipitation<br/>"
-       "/api/v1.0/stations<br/>"
-       "/api/v1.0/tobs<br/>"
+        "/api/v1.0/precipitation<br/>"
+        "/api/v1.0/stations<br/>"
+        "/api/v1.0/tobs<br/>"
         "/api/v1.0/<start>" and "/api/v1.0/<start>/#<end>"
     )
 
@@ -46,23 +46,74 @@ def about():
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
-    print("Server received request for 'precipitation' page...")
-    return "Welcome to the Precipitation API!"
+    session = Session(engine)
+    sel = [Measurement.date,Measurement.prcp]
+    queryresult = session.query(*sel).all()
+    session.close()
+
+    precipitation = []
+    for date, prcp in queryresult:
+        prcp_dict = {}
+        prcp_dict["Date"] = date
+        prcp_dict["Precipitation"] = prcp
+        precipitation.append(prcp_dict)
+
+    return jsonify(precipitation)
 
 @app.route("/api/v1.0/stations")
 def stations():
-    print("Server received request for 'stations' page...")
-    return "Welcome to the Stations API!"   
+    session = Session(engine)
+    sel = [Station.station,Station.name,Station.latitude,Station.longitude,Station.elevation]
+    queryresult = session.query(*sel).all()
+    session.close()
+
+    stations = []
+    for station,name,lat,lon,el in queryresult:
+        station_dict = {}
+        station_dict["Station"] = station
+        station_dict["Name"] = name
+        station_dict["Lat"] = lat
+        station_dict["Lon"] = lon
+        station_dict["Elevation"] = el
+        stations.append(station_dict)
+
+    return jsonify(stations) 
 
 @app.route("/api/v1.0/tobs")
 def tobs():
-    print("Server received request for 'tobs' page...")
-    return "Welcome to the Temperature API!"  
+    session = Session(engine)
+    lateststr = session.query(Measurement.date).order_by(Measurement.date.desc()).first()[0]
+    latestdate = dt.datetime.strptime(lateststr, '%Y-%m-%d')
+    querydate = dt.date(latestdate.year -1, latestdate.month, latestdate.day)
+    sel = [Measurement.date,Measurement.tobs]
+    queryresult = session.query(*sel).filter(Measurement.date >= querydate).all()
+    session.close()
 
-@app.route("/api/v1.0/<start>")
-def tobs():
-    print("Server received request for 'tobs' page...")
-    return "Welcome to the Temperature API!"  
+    tobsall = []
+    for date, tobs in queryresult:
+        tobs_dict = {}
+        tobs_dict["Date"] = date
+        tobs_dict["Tobs"] = tobs
+        tobsall.append(tobs_dict)
+
+    return jsonify(tobsall)
+
+@app.route('/api/v1.0/<start>/<stop>')
+def get_t_start_stop(start,stop):
+    session = Session(engine)
+    queryresult = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
+        filter(Measurement.date >= start).filter(Measurement.date <= stop).all()
+    session.close()
+
+    tobsall = []
+    for min,avg,max in queryresult:
+        tobs_dict = {}
+        tobs_dict["Min"] = min
+        tobs_dict["Average"] = avg
+        tobs_dict["Max"] = max
+        tobsall.append(tobs_dict)
+
+    return jsonify(tobsall)
 
 if __name__ == "__main__":
     app.run(debug=True)
